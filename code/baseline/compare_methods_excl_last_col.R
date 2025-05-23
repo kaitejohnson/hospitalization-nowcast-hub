@@ -92,6 +92,57 @@ for(i in min_horizon:max_horizon){
 
 saveRDS(size_params, "kit_disp_params.rds")
 
+
+# generate actual nowcast in standard format:
+mu <- expectation_to_add[nrow(expectation_to_add), ]
+forecast_date <- as.Date(tail(observed$date, 1))
+quantile_levels <- c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975)
+df_all <- NULL
+
+# run through horizons:
+for(d in min_horizon:max_horizon){
+  # by how mch do we need to shift quantiles upwards?
+  already_observed <- sum(matr_observed[nrow(matr_observed) - ((d + 6):d), ], na.rm = TRUE)
+  
+  # data frame for expecations:
+  df_mean <- data.frame(location = location,
+                        age_group = age_group,
+                        forecast_date = forecast_date,
+                        target_end_date = forecast_date - d,
+                        target = paste0(-d, " day ahead inc hosp"),
+                        type = "mean",
+                        quantile = NA,
+                        value = round(mu[d + 1] + already_observed),
+                        pathogen = "COVID-19")
+  
+  # obtain quantiles:
+  qtls0 <- qnbinom(quantile_levels, 
+                   size = size_params[d + 1], mu = mu[d + 1])
+  # shift them up by already oberved values
+  qtls <- qtls0 + already_observed
+  # data.frame for quantiles:
+  df_qtls <- data.frame(location = location,
+                        age_group = age_group,
+                        forecast_date = forecast_date,
+                        target_end_date = forecast_date - d,
+                        target = paste0(-d, " day ahead inc hosp"),
+                        type = "quantile",
+                        quantile = quantile_levels,
+                        value = qtls,
+                        pathogen = "COVID-19")
+  
+  # join:
+  df <- rbind(df_mean, df_qtls)
+  
+  # add to results from other horizons
+  if(is.null(df_all)){
+    df_all <- df
+  }else{
+    df_all <- rbind(df_all, df)
+  }
+}
+
+
 # Estimate dispersion using baselinenowcast
 triangle <- matr_observed[, 1:41]
 colnames(triangle) <- NULL
