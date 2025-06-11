@@ -10,7 +10,7 @@ observed0 <- read.csv("../../data-truth/COVID-19/COVID-19_hospitalizations_prepr
 
 
 
-forecast_date <-"2022-04-01"
+forecast_date <-"2021-12-01"
 ag <- "00+"
 
 observed_temp <- subset(observed0, location == "DE" & age_group == ag)
@@ -226,6 +226,26 @@ ggplot(df_comb) +
                   color = model), 
               alpha = 0.1) +
   theme_bw()
+
+# Compare the point nowcasts:
+df_KIT_pt_nc <- df_all |> filter(type == "mean") |> 
+  mutate(model = "KIT simple nowcast") |>
+  select(target_end_date, value, model)
+df_bnc_pt_nc <- data.frame(value = rollsum(rowSums(pt_nowcast_mat),
+                                           k =7,
+                                           fill = NA,
+                                           align = "right"))|>
+  mutate(time = row_number()) |>
+  left_join(date_df) |>
+  filter(target_end_date >= min(df_KIT_pt_nc$target_end_date)) |>
+  mutate(model = "baselinenowcast") |>
+  select(target_end_date, value, model)
+
+df_pt_nowcasts <- bind_rows(df_KIT_pt_nc,
+                            df_bnc_pt_nc)
+
+ggplot(df_pt_nowcasts) +
+  geom_line(aes(x = target_end_date, y = value, color = model))
   
   
 
