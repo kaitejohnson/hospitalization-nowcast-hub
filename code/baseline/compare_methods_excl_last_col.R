@@ -229,7 +229,7 @@ ggplot(df_comb) +
 
 # Compare the point nowcasts:
 df_KIT_pt_nc <- df_all |> filter(type == "mean") |> 
-  mutate(model = "KIT simple nowcast") |>
+  mutate(model = "KIT simple nowcast bug fixed") |>
   select(target_end_date, value, model)
 df_bnc_pt_nc <- data.frame(value = rollsum(rowSums(pt_nowcast_mat),
                                            k =7,
