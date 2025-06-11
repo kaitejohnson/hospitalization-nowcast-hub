@@ -10,7 +10,7 @@ observed0 <- read.csv("../../data-truth/COVID-19/COVID-19_hospitalizations_prepr
 
 
 
-forecast_date <-"2022-04-01"
+forecast_date <-"2021-12-01"
 ag <- "00+"
 
 observed_temp <- subset(observed0, location == "DE" & age_group == ag)
@@ -142,13 +142,22 @@ for(d in min_horizon:max_horizon){
   }
 }
 
+# Kit quantiles wide
+df_wide <- df_all |> 
+  filter(type == "quantile") |>
+  pivot_wider(id_cols  = c(forecast_date, target_end_date,
+                           age_group, location),
+              names_from = quantile,
+              names_prefix = "q_",
+              values_from = value) |>
+  select(-forecast_date, -age_group, -location, 
+         -q_0.1, - q_0.9) |>
+  mutate(model = "KIT simple nowcast")
+
 
 # Estimate dispersion using baselinenowcast
 triangle <- matr_observed[, 1:41]
 colnames(triangle) <- NULL
-
-# fix 0s 
-triangle[321:323, 39]<- 0
 
 pt_nowcast_mat <- generate_pt_nowcast_mat(triangle, n = n_history_expectations,
                                           max_delay = max_delay)
@@ -177,3 +186,67 @@ p <- ggplot(df) +
   geom_line(aes(x = horizon, y = disp_bnc), color = "darkgreen")
 p
 ggsave(p, filename = "compare_disp_params_full_data_7d_sum_excl_last_col.png")
+
+# Get quantiles from baselinenowcast 
+date_df <- data.frame(time = 1:nrow(observed),
+                     target_end_date = seq(
+                       from = min(observed$date),
+                       to = max(observed$date), by = "days")
+)
+nowcast_draws_df <- get_nowcast_draws(
+  pt_nowcast_mat,
+  triangle,
+  disp_bnc,
+  draws = 1000,
+  fun_to_aggregate = sum,
+  k = 7
+) |>
+  left_join(date_df) |>
+  filter(target_end_date >= forecast_date - lubridate::days(28)) |>
+  group_by(target_end_date) |>
+  summarise(q_0.5 = quantile(pred_count, 0.5, na.rm = TRUE),
+            q_0.025 = quantile(pred_count, 0.025, na.rm = TRUE),
+            q_0.25 = quantile(pred_count, 0.25, na.rm = TRUE),
+            q_0.75 = quantile(pred_count, 0.75, na.rm = TRUE),
+            q_0.975 = quantile(pred_count, 0.975, na.rm = TRUE)) |>
+  mutate(model = "baselinenowcast") |>
+  select(colnames(df_wide))
+
+
+df_comb <- bind_rows(nowcast_draws_df, df_wide)
+
+ggplot(df_comb) + 
+  geom_line(aes(x = target_end_date, y = q_0.5, color = model)) +
+  geom_ribbon(aes(x = target_end_date,
+                  ymin = q_0.025, ymax = q_0.975, fill = model,
+                  color = model), 
+              alpha = 0.1) +
+  geom_ribbon(aes(x = target_end_date,
+                  ymin = q_0.25, ymax = q_0.75, fill = model,
+                  color = model), 
+              alpha = 0.1) +
+  theme_bw()
+
+# Compare the point nowcasts:
+df_KIT_pt_nc <- df_all |> filter(type == "mean") |> 
+  mutate(model = "KIT simple nowcast bug fixed") |>
+  select(target_end_date, value, model)
+df_bnc_pt_nc <- data.frame(value = rollsum(rowSums(pt_nowcast_mat),
+                                           k =7,
+                                           fill = NA,
+                                           align = "right"))|>
+  mutate(time = row_number()) |>
+  left_join(date_df) |>
+  filter(target_end_date >= min(df_KIT_pt_nc$target_end_date)) |>
+  mutate(model = "baselinenowcast") |>
+  select(target_end_date, value, model)
+
+df_pt_nowcasts <- bind_rows(df_KIT_pt_nc,
+                            df_bnc_pt_nc)
+
+ggplot(df_pt_nowcasts) +
+  geom_line(aes(x = target_end_date, y = value, color = model))
+  
+  
+
+
