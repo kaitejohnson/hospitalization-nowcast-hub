@@ -194,3 +194,116 @@ compute_nowcast <- function(observed, location = "DE", age_group = "00+",
   # return
   return(df_all)
 }
+
+#' Generate a nowcast without using any delay density from beyond the max delay
+#' @param observed the observations / reporting triangle data.frame
+#' @param location the location for which to generate nowcasts
+#' @param age_group the age group for which to generate nowcasts
+#' @param min_horizon the minimum horizon for which to generate a nowcast (e.g., 2 for up to 2 days before the current date)
+compute_nowcast_revised <- function(observed, location = "DE", age_group = "00+",
+                            min_horizon = 2, max_horizon = 28, 
+                            max_delay = 40, n_history_expectations = 60, n_history_dispersion = 60){
+  
+  # subset to location and age group:
+  observed <- subset(observed, location == location & age_group == age_group)
+  
+  # reporting triangle as matrix
+  matr_observed <- as.matrix(observed[, grepl("value", colnames(observed))])
+  # reduce to max delay only, no additional summing
+  matr_observed <- matr_observed[, 1:(max_delay + 1)]
+                        
+  observed[nrow(matr_observed) - 0:max_delay, max_delay + 1] <- NA
+  rownames(matr_observed) <- observed$date
+  
+  nr <- nrow(matr_observed)
+  nc <- ncol(matr_observed)
+  
+  # compute point forecasts
+  expectation_to_add <- # full expectations
+    expectation_to_add_already_observed <- # expectations of the sum over already observable quantities
+    to_add_already_observed <- # sums over the respective observed quantities
+    matrix(NA, nrow = nr, ncol = max_horizon + 1,
+           dimnames = list(observed$date, NULL))
+  
+  # generate point forecasts for current date and n_history_dispersion preceding weeks
+  # these are necessary to estimate dispersion parameters
+  for(t in (nr - n_history_dispersion):nr){
+    matr_observed_temp <- back_in_time(matr_observed, t)
+    point_forecasts_temp <- compute_expectations(matr_observed_temp, n_history = n_history_expectations)
+    
+    for(d in min_horizon:max_horizon){
+      inds_nowc <- indices_nowcast(matr_observed_temp, d = d, n_history_expectations = n_history_expectations)
+      inds_already_observed <- tail(!is.na(matr_observed[1:t, ]), n_history_expectations)
+      
+      expectation_to_add[t, d + 1] <- sum(point_forecasts_temp*inds_nowc, na.rm = TRUE)
+      expectation_to_add_already_observed[t, d + 1] <- sum(point_forecasts_temp*inds_already_observed*inds_nowc, na.rm = TRUE)
+      to_add_already_observed[t, d + 1] <- sum(tail(matr_observed[1:t, ], n_history_expectations)*
+                                                 inds_already_observed*inds_nowc, na.rm = TRUE)
+    }
+  }
+  
+  # remove last row to estimate dispersion
+  expectation_to_add_already_observed <- expectation_to_add_already_observed[-nrow(expectation_to_add_already_observed), ]
+  to_add_already_observed <- to_add_already_observed[-nrow(to_add_already_observed), ]
+  
+  # estimate dispersion
+  size_params <- numeric(max_horizon +1)
+  for(i in min_horizon:max_horizon){
+    size_params[i + 1] <- fit_nb(x = to_add_already_observed[, i + 1], 
+                                 mu = expectation_to_add_already_observed[, i + 1] + 0.1)
+    # plus 0.1 to avoid ill-defined NB
+  }
+  
+  
+  # generate actual nowcast in standard format:
+  mu <- expectation_to_add[nrow(expectation_to_add), ]
+  forecast_date <- as.Date(tail(observed$date, 1))
+  quantile_levels <- c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975)
+  df_all <- NULL
+  
+  # run through horizons:
+  for(d in min_horizon:max_horizon){
+    # by how mch do we need to shift quantiles upwards?
+    already_observed <- sum(matr_observed[nrow(matr_observed) - ((d + 6):d), ], na.rm = TRUE)
+    
+    # data frame for expecations:
+    df_mean <- data.frame(location = location,
+                          age_group = age_group,
+                          forecast_date = forecast_date,
+                          target_end_date = forecast_date - d,
+                          target = paste0(-d, " day ahead inc hosp"),
+                          type = "mean",
+                          quantile = NA,
+                          value = round(mu[d + 1] + already_observed),
+                          pathogen = "COVID-19")
+    
+    # obtain quantiles:
+    qtls0 <- qnbinom(quantile_levels, 
+                     size = size_params[d + 1], mu = mu[d + 1])
+    # shift them up by already oberved values
+    qtls <- qtls0 + already_observed
+    # data.frame for quantiles:
+    df_qtls <- data.frame(location = location,
+                          age_group = age_group,
+                          forecast_date = forecast_date,
+                          target_end_date = forecast_date - d,
+                          target = paste0(-d, " day ahead inc hosp"),
+                          type = "quantile",
+                          quantile = quantile_levels,
+                          value = qtls,
+                          pathogen = "COVID-19")
+    
+    # join:
+    df <- rbind(df_mean, df_qtls)
+    
+    # add to results from other horizons
+    if(is.null(df_all)){
+      df_all <- df
+    }else{
+      df_all <- rbind(df_all, df)
+    }
+  }
+  
+  # return
+  return(df_all)
+}
