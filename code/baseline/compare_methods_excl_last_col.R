@@ -159,9 +159,6 @@ df_wide <- df_all |>
 triangle <- matr_observed[, 1:41]
 colnames(triangle) <- NULL
 
-# fix 0s 
-triangle[321:323, 39]<- 0
-
 pt_nowcast_mat <- generate_pt_nowcast_mat(triangle, n = n_history_expectations,
                                           max_delay = max_delay)
 trunc_rep_tri_list <- truncate_triangles(triangle,
