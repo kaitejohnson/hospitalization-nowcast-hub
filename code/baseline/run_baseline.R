@@ -3,6 +3,7 @@ source("functions.R")
 source("../check_nowcast_submission/plot_functions.R")
 
 library(zoo)
+library(lubridate)
 
 # read truth data:
 observed0 <- read.csv("../../data-truth/COVID-19/COVID-19_hospitalizations_preprocessed.csv",
@@ -10,7 +11,9 @@ observed0 <- read.csv("../../data-truth/COVID-19/COVID-19_hospitalizations_prepr
 
 
 # dates for which to produce nowcasts:
-forecast_dates <- Sys.Date()
+ forecast_dates <- seq(from = ymd("2021-11-22"),
+                                        to = ymd("2022-04-29"),
+                                        by = "day")
 
 for(i in seq_along(forecast_dates)){
   all_nc <- NULL
@@ -119,12 +122,8 @@ for(i in seq_along(forecast_dates)){
   }
   
   # write out:
-  if(forecast_date == Sys.Date()){
-    write.csv(all_nc, file = paste0("../../data-processed/KIT-simple_nowcast/", forecast_date, "-KIT-simple_nowcast.csv"), row.names = FALSE)
-  }else{
-    cat("forecast_date is in the past, writing to data-processed_retrospective")
-    write.csv(all_nc, file = paste0("../../data-processed_retrospective/", forecast_date, "-KIT-simple_nowcast.csv"), row.names = FALSE)
-  }
+  write.csv(all_nc, file = paste0("../../data-processed_retrospective/KIT-simple_nowcast_original/", forecast_date, "-KIT-simple_nowcast.csv"), row.names = FALSE)
+
 }
 
 
