@@ -122,7 +122,7 @@ for(i in seq_along(forecast_dates)){
   }
   
   # write out:
-  write.csv(all_nc, file = paste0("../../data-processed_retrospective/KIT-simple_nowcast_original", forecast_date, "-KIT-simple_nowcast.csv"), row.names = FALSE)
+  write.csv(all_nc, file = paste0("../../data-processed_retrospective/KIT-simple_nowcast_original/", forecast_date, "-KIT-simple_nowcast.csv"), row.names = FALSE)
 
 }
 
